@@ -2,6 +2,7 @@ from unittest import TestCase
 
 from dnaco.rpc.meta import Meta
 
+
 class TestRpcMeta(TestCase):
     def test_simple(self):
         meta = Meta()

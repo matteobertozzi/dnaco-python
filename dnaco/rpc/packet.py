@@ -1,10 +1,9 @@
-from .frame import build_frame_header
-
-
 class RpcPacket:
     def __init__(self, trace_id, pkg_id):
         self.trace_id = trace_id
         self.pkg_id = pkg_id
+        self.rev = None
+        self.write_to_wal = None
 
 
 class RpcRequest(RpcPacket):
@@ -141,8 +140,8 @@ def build_rpc_response_head(op_status, queue_time, exec_time):
     #   | 11 | 111 | 111 | | Queue Time ns | | Exec Time ns |
     #   +----+-----+-----+ +---------------+ +--------------+
     #   0    2     5     8
-    queue_time_len = ((queue_time.bit_length() + 7) // 8)
-    exec_time_len = ((exec_time.bit_length() + 7) // 8)
+    queue_time_len = ((queue_time.bit_length() + 7) // 8) if queue_time > 0 else 1
+    exec_time_len = ((exec_time.bit_length() + 7) // 8) if exec_time > 0 else 1
     resp_head = (op_status << 6) | ((queue_time_len - 1) << 3) | (exec_time_len - 1)
     return bytes([resp_head]) + queue_time.to_bytes(queue_time_len, byteorder='little') + exec_time.to_bytes(
         exec_time_len, byteorder='little')
@@ -160,8 +159,7 @@ def build_rpc_head(pkg_type, trace_id, pkg_id):
     trace_id_len = ((trace_id.bit_length() + 7) // 8)
     pkg_id_len = ((pkg_id.bit_length() + 7) // 8)
     rpc_head = (pkg_type << 6) | ((trace_id_len - 1) << 3) | (pkg_id_len - 1)
-    return bytes([rpc_head]) + trace_id.to_bytes(trace_id_len, byteorder='little') + pkg_id.to_bytes(pkg_id_len,
-                                                                                                     byteorder='little')
+    return bytes([rpc_head]) + trace_id.to_bytes(trace_id_len, byteorder='little') + pkg_id.to_bytes(pkg_id_len, byteorder='little')
 
 
 class RpcPacketBuilder:
@@ -181,9 +179,9 @@ class RpcPacketBuilder:
     def new_request(self, trace_id, op_type, request_id, body, send_result_to=0, result_id=None):
         req = build_rpc_request_head(op_type, request_id, send_result_to, result_id) + body
         req = build_rpc_head(0, trace_id, self.next_packet_id()) + req
-        return build_frame_header(self.rev, False, len(req)) + req
+        return req
 
     def new_response(self, trace_id, pkg_id, op_status, queue_time, exec_time, body):
         resp = build_rpc_response_head(op_status, queue_time, exec_time) + body
         resp = build_rpc_head(1, trace_id, pkg_id) + resp
-        return build_frame_header(self.rev, False, len(resp)) + resp
+        return resp

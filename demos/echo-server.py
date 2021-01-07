@@ -11,7 +11,7 @@ async def client_loop(port):
         writer.write(b'x' * 10)
         await writer.drain()
 
-        rev, write_to_wal, data = await read_frame(reader)
+        _, rev, write_to_wal, data = await read_frame(reader)
         print('CLIENT: received packet', rev, write_to_wal, data)
 
     finally:
@@ -19,8 +19,8 @@ async def client_loop(port):
         await writer.wait_closed()
 
 
-async def echo_handler(rev, write_to_wal, data):
-    print('ECHO SERVER: received packet', rev, write_to_wal, data)
+async def echo_handler(rev, write_to_wal, req_recv_ns, data):
+    print('ECHO SERVER: received packet', rev, write_to_wal, req_recv_ns, data)
     return rev, write_to_wal, data
 
 
