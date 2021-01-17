@@ -35,7 +35,7 @@ class RpcRequest(RpcPacket):
     STORE_RESULT_WITH_ID = 2
     FORWARD_RESULT_TO = 3
 
-    def __init__(self, trace_id, pkg_id, op_type, send_result_to, result_id, request_id, body):
+    def __init__(self, trace_id, pkg_id, op_type, request_id, body, send_result_to, result_id):
         super(RpcRequest, self).__init__(trace_id, pkg_id)
         self.op_type = op_type
         self.send_result_to = send_result_to
@@ -82,9 +82,9 @@ def parse_rpc_packet(frame):
     # - Packet Type: 2bit (REQUEST, RESPONSE, EVENT, CONTROL)
     # - Trace Id length: 3bit (1-8 bytes ID)
     # - Packet Id length: 3bit (1-8 bytes ID)
-    #  +----+-----+-----+ +----------+ +-----------------------+
-    #  | 11 | 111 | 111 | | Trace Id | | Packet Id (1-8 bytes) |
-    #  +----+-----+-----+ +----------+ +-----------------------+
+    #  +----+-----+-----+ +----------+ +-----------+
+    #  | 11 | 111 | 111 | | Trace Id | | Packet Id |
+    #  +----+-----+-----+ +----------+ +-----------+
     #  0    2     5     8
     rpc_head = frame.read_byte()
     pkg_type = (rpc_head >> 6) & 0x3
@@ -98,19 +98,19 @@ def parse_rpc_packet(frame):
         # RPC Request packets are composed of:
         # - Operation Type: 2bit (READ, WRITE, RW, COMPUTE)
         # - Send Result to: 2bit (CALLER, STORE_IN_MEMORY, STORE_WITH_ID, FORWARD_TO)
-        #  +----+----+--------+--------+ +-----------+ +------------+
-        #  | 11 | 11 | ------ | ------ | | Result Id | | Request Id |
-        #  +----+----+--------+--------+ +-----------+ +------------+
-        #  0    2    4        8       16
+        #  +----+----+--------+-------+ +------------+ +------------+
+        #  | 11 | 11 | 111111 | 11111 | | Request Id | | Result Id  |
+        #  +----+----+--------+-------+ +------------+ +------------+
+        #  0    2    4       10      16  (1-64 bytes)   (1-64 bytes)
         req_head = int.from_bytes(frame.read(2), byteorder='big')
         op_type = (req_head >> 14) & 0x3
         send_result_to = (req_head >> 12) & 0x3
-        result_id_len = (req_head >> 6) & 0x3f
-        request_id_len = 1 + (req_head & 0x3f)
-        result_id = frame.read(result_id_len)
+        request_id_len = 1 + ((req_head >> 6) & 0x3f)
+        result_id_len = req_head & 0x3f
         request_id = frame.read(request_id_len)
+        result_id = frame.read(result_id_len)
         data = frame.read_all()
-        return RpcRequest(trace_id, pkg_id, op_type, send_result_to, result_id, request_id, data)
+        return RpcRequest(trace_id, pkg_id, op_type, request_id, data, send_result_to, result_id)
 
     if pkg_type == 1:
         # RPC Response Packets are composed of:
@@ -137,14 +137,14 @@ def build_rpc_request_head(op_type, request_id, send_result_to=0, result_id=None
     # RPC Request packets are composed of:
     # - Operation Type: 2bit (READ, WRITE, RW, COMPUTE)
     # - Send Result to: 2bit (CALLER, STORE_IN_MEMORY, STORE_WITH_ID, FORWARD_TO)
-    #  +----+----+--------+--------+ +-----------+ +------------+
-    #  | 11 | 11 | ------ | ------ | | Result Id | | Request Id |
-    #  +----+----+--------+--------+ +-----------+ +------------+
-    #  0    2    4        8       16
+    #  +----+----+--------+-------+ +------------+ +------------+
+    #  | 11 | 11 | 111111 | 11111 | | Request Id | | Result Id  |
+    #  +----+----+--------+-------+ +------------+ +------------+
+    #  0    2    4       10      16  (1-64 bytes)   (1-64 bytes)
     req_head = (op_type << 14) | (send_result_to << 12)
-    req_head |= (len(result_id) << 6) if result_id else 0
-    req_head |= (len(request_id) - 1)
-    return req_head.to_bytes(2, byteorder='big') + (result_id if result_id else b'') + request_id
+    req_head |= (len(request_id) - 1) << 6
+    req_head |= len(result_id) if result_id else 0
+    return req_head.to_bytes(2, byteorder='big') + request_id + (result_id if result_id else b'')
 
 
 def build_rpc_response_head(op_status, queue_time, exec_time):
@@ -168,9 +168,9 @@ def build_rpc_head(pkg_type, trace_id, pkg_id):
     # - Packet Type: 2bit (REQUEST, RESPONSE, EVENT, CONTROL)
     # - Trace Id length: 3bit (1-8 bytes ID)
     # - Packet Id length: 3bit (1-8 bytes ID)
-    #  +----+-----+-----+ +----------+ +-----------------------+
-    #  | 11 | 111 | 111 | | Trace Id | | Packet Id (1-8 bytes) |
-    #  +----+-----+-----+ +----------+ +-----------------------+
+    #  +----+-----+-----+ +----------+ +-----------+
+    #  | 11 | 111 | 111 | | Trace Id | | Packet Id |
+    #  +----+-----+-----+ +----------+ +-----------+
     #  0    2     5     8
     trace_id_len = ((trace_id.bit_length() + 7) // 8)
     pkg_id_len = ((pkg_id.bit_length() + 7) // 8)

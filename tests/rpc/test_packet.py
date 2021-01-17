@@ -25,7 +25,7 @@ class TestRpcPacket(TestCase):
         pkg_builder = RpcPacketBuilder(1)
 
         req = pkg_builder.new_request(1, RpcRequest.OP_TYPE_READ, b'/foo', b'req-body')
-        self.assertEqual(req, b'\x00\x01\x01\x00\x03/fooreq-body')
+        self.assertEqual(req, b'\x00\x01\x01\x00\xc0/fooreq-body')
 
         req_reader = FrameReader(req)
         req_packet = parse_rpc_packet(req_reader)
